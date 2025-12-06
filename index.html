@@ -270,13 +270,29 @@
             background: white;
             padding: 30px;
             border-radius: 12px;
-            max-width: 500px;
+            max-width: 600px;
             width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
         }
 
         .modal-content h3 {
             margin-bottom: 20px;
             color: #333;
+        }
+
+        .modal-content small {
+            display: block;
+            line-height: 1.5;
+        }
+
+        .modal-content small a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .modal-content small a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -303,6 +319,9 @@
             <div class="control-group">
                 <button id="uploadDataBtn" disabled>📤 Daten für aktuellen Stamm hochladen</button>
             </div>
+            <div class="control-group">
+                <button id="settingsBtn">⚙️ GitHub Einstellungen</button>
+            </div>
         </div>
 
         <div id="uploadSection" class="upload-section hidden">
@@ -313,6 +332,8 @@ Herr von Ribbeck;7;501 ;956;1;  ;61,140
 Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             <div class="button-group">
                 <button id="processDataBtn">✅ Daten verarbeiten</button>
+                <button id="saveToGitHubBtn" class="hidden" disabled>💾 In GitHub speichern</button>
+                <button id="downloadCSVAltBtn" class="hidden">⬇️ CSV downloaden (manuell)</button>
                 <button id="cancelUploadBtn">❌ Abbrechen</button>
             </div>
         </div>
@@ -339,8 +360,7 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
 
             <div class="tabs">
                 <button class="tab active" data-tab="overview">📊 Übersicht</button>
-                <button class="tab" data-tab="top10">🏆 Top 10</button>
-                <button class="tab" data-tab="bottom10">📉 Bottom 10</button>
+                <button class="tab" data-tab="history">📈 Verlauf (alle Spieler)</button>
             </div>
 
             <div id="overviewTab" class="tab-content">
@@ -362,26 +382,17 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
                 </div>
             </div>
 
-            <div id="top10Tab" class="tab-content hidden">
+            <div id="historyTab" class="tab-content hidden">
                 <div class="chart-container">
-                    <h2>Top 10 - Geplünderte Rohstoffe über Zeit</h2>
+                    <h2>Geplünderte Rohstoffe - Alle Spieler</h2>
                     <div class="chart-wrapper">
-                        <canvas id="top10PlunderedChart"></canvas>
+                        <canvas id="allPlayersPlunderedChart"></canvas>
                     </div>
                 </div>
                 <div class="chart-container">
-                    <h2>Top 10 - Punkte über Zeit</h2>
+                    <h2>Punkte - Alle Spieler</h2>
                     <div class="chart-wrapper">
-                        <canvas id="top10PointsChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <div id="bottom10Tab" class="tab-content hidden">
-                <div class="chart-container">
-                    <h2>Bottom 10 - Geplünderte Rohstoffe über Zeit</h2>
-                    <div class="chart-wrapper">
-                        <canvas id="bottom10Chart"></canvas>
+                        <canvas id="allPlayersPointsChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -406,17 +417,211 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
         </div>
     </div>
 
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <h3>⚙️ GitHub Einstellungen</h3>
+            <p style="color: #666; margin-bottom: 15px;">Um direkt in GitHub zu speichern, benötigst du ein Personal Access Token.</p>
+            
+            <div class="control-group">
+                <label for="githubUsername">GitHub Username:</label>
+                <input type="text" id="githubUsername" placeholder="dein-username">
+            </div>
+            
+            <div class="control-group">
+                <label for="githubRepo">Repository Name:</label>
+                <input type="text" id="githubRepo" placeholder="stamm-tracker">
+            </div>
+            
+            <div class="control-group">
+                <label for="githubToken">Personal Access Token:</label>
+                <input type="password" id="githubToken" placeholder="ghp_...">
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    Token erstellen: GitHub → Settings → Developer settings → Personal access tokens → 
+                    <a href="https://github.com/settings/tokens/new" target="_blank">Generate new token (classic)</a><br>
+                    Benötigte Berechtigung: <strong>repo</strong> (Full control of private repositories)
+                </small>
+            </div>
+            
+            <div id="settingsStatus" style="margin: 15px 0;"></div>
+            
+            <div class="button-group">
+                <button id="saveSettingsBtn">✅ Speichern</button>
+                <button id="testConnectionBtn">🔍 Verbindung testen</button>
+                <button id="cancelSettingsBtn">❌ Abbrechen</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Global state
         let stammList = [];
         let currentStamm = null;
         let stammData = {}; // { stammName: [{datum, name, punkte, geplündert}, ...] }
         let charts = {};
+        let githubSettings = {
+            username: '',
+            repo: '',
+            token: ''
+        };
+
+        // GitHub API Functions
+        function loadGitHubSettings() {
+            const saved = localStorage.getItem('githubSettings');
+            if (saved) {
+                githubSettings = JSON.parse(saved);
+                return true;
+            }
+            return false;
+        }
+
+        function saveGitHubSettings() {
+            localStorage.setItem('githubSettings', JSON.stringify(githubSettings));
+        }
+
+        function hasGitHubAccess() {
+            return githubSettings.username && githubSettings.repo && githubSettings.token;
+        }
+
+        async function testGitHubConnection() {
+            if (!hasGitHubAccess()) {
+                return { success: false, message: 'Fehlende Einstellungen' };
+            }
+
+            try {
+                const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}`, {
+                    headers: {
+                        'Authorization': `token ${githubSettings.token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                if (response.ok) {
+                    return { success: true, message: 'Verbindung erfolgreich!' };
+                } else {
+                    return { success: false, message: `Fehler: ${response.status} - ${response.statusText}` };
+                }
+            } catch (error) {
+                return { success: false, message: 'Netzwerkfehler: ' + error.message };
+            }
+        }
+
+        async function getFileSHA(path) {
+            try {
+                const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}/contents/${path}`, {
+                    headers: {
+                        'Authorization': `token ${githubSettings.token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.sha;
+                }
+                return null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        async function saveToGitHub(stammName, csvContent) {
+            if (!hasGitHubAccess()) {
+                showMessage('GitHub Einstellungen fehlen. Bitte konfigurieren.', 'error');
+                return false;
+            }
+
+            const path = `data/${stammName}.csv`;
+            const sha = await getFileSHA(path);
+            
+            const content = btoa(unescape(encodeURIComponent(csvContent)));
+            
+            const body = {
+                message: `Update ${stammName} - ${new Date().toISOString().split('T')[0]}`,
+                content: content,
+                branch: 'main'
+            };
+
+            if (sha) {
+                body.sha = sha;
+            }
+
+            try {
+                const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}/contents/${path}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${githubSettings.token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (response.ok) {
+                    showMessage('✅ Erfolgreich in GitHub gespeichert!', 'success');
+                    return true;
+                } else {
+                    const error = await response.json();
+                    showMessage(`GitHub Fehler: ${error.message}`, 'error');
+                    return false;
+                }
+            } catch (error) {
+                showMessage('Netzwerkfehler: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        async function updateStammListInGitHub(newStammList) {
+            if (!hasGitHubAccess()) {
+                showMessage('GitHub Einstellungen fehlen. Bitte konfigurieren.', 'error');
+                return false;
+            }
+
+            const path = 'stamm-list.json';
+            const sha = await getFileSHA(path);
+            
+            const jsonContent = JSON.stringify(newStammList, null, 2);
+            const content = btoa(unescape(encodeURIComponent(jsonContent)));
+            
+            const body = {
+                message: `Add new stamm to list`,
+                content: content,
+                branch: 'main'
+            };
+
+            if (sha) {
+                body.sha = sha;
+            }
+
+            try {
+                const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}/contents/${path}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${githubSettings.token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (response.ok) {
+                    return true;
+                } else {
+                    const error = await response.json();
+                    showMessage(`GitHub Fehler beim Update der stamm-list.json: ${error.message}`, 'error');
+                    return false;
+                }
+            } catch (error) {
+                showMessage('Netzwerkfehler: ' + error.message, 'error');
+                return false;
+            }
+        }
 
         // Initialize
         async function init() {
+            loadGitHubSettings();
             await loadStammList();
             setupEventListeners();
+            updateGitHubButtons();
         }
 
         async function loadStammList() {
@@ -634,40 +839,25 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             const latestDate = getLatestDate(data);
             const latestData = data.filter(d => d.datum === latestDate);
 
-            // Top 10 by plundered
-            const top10 = [...latestData]
+            // All players sorted by plundered (for consistent colors)
+            const allPlayers = [...latestData]
                 .sort((a, b) => b.geplündert - a.geplündert)
-                .slice(0, 10)
                 .map(p => p.name);
 
-            charts.top10Plundered = createLineChart(
-                'top10PlunderedChart',
+            charts.allPlayersPlundered = createLineChart(
+                'allPlayersPlunderedChart',
                 data,
-                top10,
+                allPlayers,
                 dates,
                 'geplündert'
             );
 
-            charts.top10Points = createLineChart(
-                'top10PointsChart',
+            charts.allPlayersPoints = createLineChart(
+                'allPlayersPointsChart',
                 data,
-                top10,
+                allPlayers,
                 dates,
                 'punkte'
-            );
-
-            // Bottom 10
-            const bottom10 = [...latestData]
-                .sort((a, b) => a.geplündert - b.geplündert)
-                .slice(0, 10)
-                .map(p => p.name);
-
-            charts.bottom10 = createLineChart(
-                'bottom10Chart',
-                data,
-                bottom10,
-                dates,
-                'geplündert'
             );
         }
 
@@ -730,13 +920,30 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             const colors = [
                 '#667eea', '#764ba2', '#f093fb', '#4facfe',
                 '#43e97b', '#fa709a', '#fee140', '#30cfd0',
-                '#a8edea', '#fed6e3'
+                '#a8edea', '#fed6e3', '#89f7fe', '#66a6ff',
+                '#f78ca0', '#f9748f', '#fd868c', '#fe9a8b',
+                '#fbc2eb', '#a6c1ee', '#c2e9fb', '#e0c3fc',
+                '#8ec5fc', '#ffecd2', '#fcb69f', '#ffeaa7',
+                '#fd79a8'
             ];
             const result = [];
             for (let i = 0; i < count; i++) {
                 result.push(colors[i % colors.length]);
             }
             return result;
+        }
+
+        function updateGitHubButtons() {
+            const hasAccess = hasGitHubAccess();
+            // Settings button shows status
+            const settingsBtn = document.getElementById('settingsBtn');
+            if (hasAccess) {
+                settingsBtn.textContent = '⚙️ GitHub ✓';
+                settingsBtn.style.background = '#28a745';
+            } else {
+                settingsBtn.textContent = '⚙️ GitHub Einstellungen';
+                settingsBtn.style.background = '#667eea';
+            }
         }
 
         function formatNumber(num) {
@@ -798,12 +1005,50 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
                 document.getElementById('addStammModal').classList.add('active');
             });
 
+            // Settings button
+            document.getElementById('settingsBtn').addEventListener('click', () => {
+                // Pre-fill current settings
+                document.getElementById('githubUsername').value = githubSettings.username || '';
+                document.getElementById('githubRepo').value = githubSettings.repo || '';
+                document.getElementById('githubToken').value = githubSettings.token || '';
+                document.getElementById('settingsModal').classList.add('active');
+            });
+
+            document.getElementById('cancelSettingsBtn').addEventListener('click', () => {
+                document.getElementById('settingsModal').classList.remove('active');
+            });
+
+            document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+                githubSettings.username = document.getElementById('githubUsername').value.trim();
+                githubSettings.repo = document.getElementById('githubRepo').value.trim();
+                githubSettings.token = document.getElementById('githubToken').value.trim();
+                
+                if (githubSettings.username && githubSettings.repo && githubSettings.token) {
+                    saveGitHubSettings();
+                    updateGitHubButtons();
+                    showMessage('GitHub Einstellungen gespeichert!', 'success');
+                    document.getElementById('settingsModal').classList.remove('active');
+                } else {
+                    showMessage('Bitte alle Felder ausfüllen', 'error');
+                }
+            });
+
+            document.getElementById('testConnectionBtn').addEventListener('click', async () => {
+                const statusDiv = document.getElementById('settingsStatus');
+                statusDiv.textContent = 'Teste Verbindung...';
+                statusDiv.className = '';
+                
+                const result = await testGitHubConnection();
+                statusDiv.textContent = result.message;
+                statusDiv.className = result.success ? 'success' : 'error';
+            });
+
             document.getElementById('cancelAddStammBtn').addEventListener('click', () => {
                 document.getElementById('addStammModal').classList.remove('active');
                 document.getElementById('newStammName').value = '';
             });
 
-            document.getElementById('confirmAddStammBtn').addEventListener('click', () => {
+            document.getElementById('confirmAddStammBtn').addEventListener('click', async () => {
                 const name = document.getElementById('newStammName').value.trim();
                 if (!name) {
                     showMessage('Bitte einen Stammnamen eingeben', 'error');
@@ -816,16 +1061,49 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
                     return;
                 }
 
+                // Check if GitHub is configured
+                if (!hasGitHubAccess()) {
+                    showMessage('⚠️ GitHub nicht konfiguriert. Stamm wird nur lokal hinzugefügt. Bitte stamm-list.json manuell updaten!', 'error');
+                    // Add locally anyway
+                    stammList.push(filename);
+                    stammData[filename] = [];
+                    updateStammSelect();
+                    document.getElementById('stammSelect').value = filename;
+                    currentStamm = filename;
+                    document.getElementById('uploadDataBtn').disabled = false;
+                    document.getElementById('addStammModal').classList.remove('active');
+                    document.getElementById('newStammName').value = '';
+                    return;
+                }
+
+                // Disable button during operation
+                const btn = document.getElementById('confirmAddStammBtn');
+                btn.disabled = true;
+                btn.textContent = '⏳ Wird hinzugefügt...';
+
+                // Add to list and update GitHub
                 stammList.push(filename);
-                stammData[filename] = [];
-                updateStammSelect();
-                document.getElementById('stammSelect').value = filename;
-                currentStamm = filename;
-                document.getElementById('uploadDataBtn').disabled = false;
-                
-                showMessage(`Stamm "${name}" hinzugefügt. Bitte aktualisiere die stamm-list.json Datei!`, 'success');
-                document.getElementById('addStammModal').classList.remove('active');
-                document.getElementById('newStammName').value = '';
+                const success = await updateStammListInGitHub(stammList);
+
+                if (success) {
+                    stammData[filename] = [];
+                    updateStammSelect();
+                    document.getElementById('stammSelect').value = filename;
+                    currentStamm = filename;
+                    document.getElementById('uploadDataBtn').disabled = false;
+                    
+                    showMessage(`✅ Stamm "${name}" hinzugefügt und in GitHub gespeichert!`, 'success');
+                    document.getElementById('addStammModal').classList.remove('active');
+                    document.getElementById('newStammName').value = '';
+                } else {
+                    // Remove from local list if GitHub failed
+                    stammList.pop();
+                    showMessage('❌ Fehler beim Speichern in GitHub. Stamm wurde NICHT hinzugefügt.', 'error');
+                }
+
+                // Re-enable button
+                btn.disabled = false;
+                btn.textContent = '✅ Hinzufügen';
             });
 
             // Upload data button
@@ -851,13 +1129,67 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
                     stammData[currentStamm] = mergeData(stammData[currentStamm], newData);
                     
                     showMessage(`${newData.length} Spieler erfolgreich verarbeitet!`, 'success');
-                    document.getElementById('uploadSection').classList.add('hidden');
-                    document.getElementById('csvInput').value = '';
+                    
+                    // Show save/download buttons
+                    document.getElementById('processDataBtn').classList.add('hidden');
+                    document.getElementById('csvInput').disabled = true;
+                    
+                    if (hasGitHubAccess()) {
+                        document.getElementById('saveToGitHubBtn').classList.remove('hidden');
+                        document.getElementById('saveToGitHubBtn').disabled = false;
+                    }
+                    document.getElementById('downloadCSVAltBtn').classList.remove('hidden');
                     
                     renderStammView();
                 } catch (error) {
                     showMessage('Fehler beim Verarbeiten: ' + error.message, 'error');
                 }
+            });
+
+            // Save to GitHub button
+            document.getElementById('saveToGitHubBtn').addEventListener('click', async () => {
+                if (!currentStamm || !stammData[currentStamm]) return;
+                
+                document.getElementById('saveToGitHubBtn').disabled = true;
+                document.getElementById('saveToGitHubBtn').textContent = '⏳ Speichere...';
+                
+                const csv = generateCSV(stammData[currentStamm]);
+                const success = await saveToGitHub(currentStamm, csv);
+                
+                if (success) {
+                    // Reset upload section
+                    document.getElementById('uploadSection').classList.add('hidden');
+                    document.getElementById('csvInput').value = '';
+                    document.getElementById('csvInput').disabled = false;
+                    document.getElementById('processDataBtn').classList.remove('hidden');
+                    document.getElementById('saveToGitHubBtn').classList.add('hidden');
+                    document.getElementById('downloadCSVAltBtn').classList.add('hidden');
+                } else {
+                    document.getElementById('saveToGitHubBtn').disabled = false;
+                    document.getElementById('saveToGitHubBtn').textContent = '💾 In GitHub speichern';
+                }
+            });
+
+            // Download CSV Alt button (manual fallback)
+            document.getElementById('downloadCSVAltBtn').addEventListener('click', () => {
+                if (!currentStamm || !stammData[currentStamm]) return;
+                
+                const csv = generateCSV(stammData[currentStamm]);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${currentStamm}.csv`;
+                link.click();
+                
+                showMessage('CSV heruntergeladen. Bitte manuell committen.', 'success');
+                
+                // Reset upload section
+                document.getElementById('uploadSection').classList.add('hidden');
+                document.getElementById('csvInput').value = '';
+                document.getElementById('csvInput').disabled = false;
+                document.getElementById('processDataBtn').classList.remove('hidden');
+                document.getElementById('saveToGitHubBtn').classList.add('hidden');
+                document.getElementById('downloadCSVAltBtn').classList.add('hidden');
             });
 
             // Download CSV
