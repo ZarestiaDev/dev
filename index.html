@@ -86,6 +86,16 @@
             transform: none;
         }
 
+        button.has-changes {
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+        }
+
         .upload-section {
             background: #f8f9fa;
             padding: 20px;
@@ -395,6 +405,9 @@
                 <button id="uploadDataBtn" disabled>📤 Daten für aktuellen Stamm hochladen</button>
             </div>
             <div class="control-group">
+                <button id="pushAllBtn" disabled>☁️ Alle Änderungen pushen</button>
+            </div>
+            <div class="control-group">
                 <button id="settingsBtn">⚙️ GitHub Einstellungen</button>
             </div>
         </div>
@@ -409,12 +422,9 @@
         <div id="uploadSection" class="upload-section hidden">
             <h3>CSV-Daten einfügen</h3>
             <p style="color: #666; margin-bottom: 10px;">Kopiere die Rohdaten aus Die Stämme hier rein (inkl. Header-Zeile):</p>
-            <textarea id="csvInput" placeholder="Name;Rang;Punkte;Globaler Rang;Dörfer;Geplündert
-marrrrta;1;910;3;1;43,970
--KLASSIK-;2;878;7;1;36,880"></textarea>
+            <textarea id="csvInput"></textarea>
             <div class="button-group">
                 <button id="processDataBtn">✅ Daten verarbeiten</button>
-                <button id="saveToGitHubBtn" class="hidden" disabled>💾 In GitHub speichern</button>
                 <button id="downloadCSVAltBtn" class="hidden">⬇️ CSV downloaden (manuell)</button>
                 <button id="cancelUploadBtn">❌ Abbrechen</button>
             </div>
@@ -545,6 +555,93 @@ marrrrta;1;910;3;1;43,970
             repo: '',
             token: ''
         };
+        let pendingChanges = {
+            stammList: false,
+            stammData: new Set() // Set of stammNames that have changed
+        };
+
+        // LocalStorage Management
+        function saveToLocalStorage() {
+            try {
+                localStorage.setItem('stammData', JSON.stringify(stammData));
+                localStorage.setItem('stammList', JSON.stringify(stammList));
+                localStorage.setItem('pendingChanges', JSON.stringify({
+                    stammList: pendingChanges.stammList,
+                    stammData: Array.from(pendingChanges.stammData)
+                }));
+            } catch (error) {
+                console.error('Failed to save to localStorage:', error);
+                // Warn user if quota exceeded (but only once per session)
+                if (error.name === 'QuotaExceededError' && !window.localStorageWarningShown) {
+                    window.localStorageWarningShown = true;
+                    showMessage('⚠️ Browser-Speicher voll! Änderungen werden nicht gespeichert. Bitte pushe zu GitHub.', 'error');
+                }
+            }
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                const savedData = localStorage.getItem('stammData');
+                const savedList = localStorage.getItem('stammList');
+                const savedChanges = localStorage.getItem('pendingChanges');
+
+                if (savedData) {
+                    stammData = JSON.parse(savedData);
+                }
+                if (savedList) {
+                    stammList = JSON.parse(savedList);
+                }
+                if (savedChanges) {
+                    const changes = JSON.parse(savedChanges);
+                    pendingChanges.stammList = changes.stammList;
+                    pendingChanges.stammData = new Set(changes.stammData);
+                }
+            } catch (error) {
+                console.error('Failed to load from localStorage:', error);
+            }
+        }
+
+        function clearLocalStorage() {
+            localStorage.removeItem('stammData');
+            localStorage.removeItem('stammList');
+            localStorage.removeItem('pendingChanges');
+            pendingChanges = {
+                stammList: false,
+                stammData: new Set()
+            };
+        }
+
+        function markStammDataChanged(stammName) {
+            pendingChanges.stammData.add(stammName);
+            saveToLocalStorage();
+            updatePushButton();
+        }
+
+        function markStammListChanged() {
+            pendingChanges.stammList = true;
+            saveToLocalStorage();
+            updatePushButton();
+        }
+
+        function hasPendingChanges() {
+            return pendingChanges.stammList || pendingChanges.stammData.size > 0;
+        }
+
+        function updatePushButton() {
+            const btn = document.getElementById('pushAllBtn');
+            if (!btn) return;
+
+            if (hasPendingChanges()) {
+                btn.disabled = false;
+                btn.classList.add('has-changes');
+                const changeCount = (pendingChanges.stammList ? 1 : 0) + pendingChanges.stammData.size;
+                btn.textContent = `☁️ ${changeCount} Änderung${changeCount > 1 ? 'en' : ''} pushen`;
+            } else {
+                btn.disabled = true;
+                btn.classList.remove('has-changes');
+                btn.textContent = '☁️ Alle Änderungen pushen';
+            }
+        }
 
         // GitHub API Functions
         function loadGitHubSettings() {
@@ -701,16 +798,32 @@ marrrrta;1;910;3;1;43,970
         // Initialize
         async function init() {
             loadGitHubSettings();
+            loadFromLocalStorage();
             await loadStammList();
             renderStammList();
             setupEventListeners();
             updateGitHubButtons();
+            updatePushButton();
         }
 
         async function loadStammList() {
+            // If we have local changes, use those
+            if (stammList.length > 0) {
+                console.log('Using stammList from localStorage');
+                return;
+            }
+
+            // Otherwise load from GitHub
             try {
                 const response = await fetch('stamm-list.json');
                 stammList = await response.json();
+                
+                // Load initial data for all stamms
+                for (const stammName of stammList) {
+                    if (!stammData[stammName]) {
+                        await loadStammData(stammName);
+                    }
+                }
             } catch (error) {
                 showMessage('Keine stamm-list.json gefunden. Erstelle eine neue Liste.', 'error');
                 stammList = [];
@@ -738,16 +851,30 @@ marrrrta;1;910;3;1;43,970
 
                 card.innerHTML = `
                     <div class="stamm-card-header">
-                        <h3>${formatStammName(stammName)}</h3>
-                        <button class="stamm-card-delete" onclick="deleteStamm('${stammName}'); event.stopPropagation();">🗑️</button>
+                        <h3>${escapeHtml(formatStammName(stammName))}</h3>
+                        <button class="stamm-card-delete" data-stamm="${escapeHtml(stammName)}">🗑️</button>
                     </div>
                     <div class="stamm-card-info">
                         👥 ${playerCount} Spieler<br>
-                        📅 ${lastUpdate}
+                        📅 ${escapeHtml(lastUpdate)}
                     </div>
                 `;
 
-                card.addEventListener('click', () => selectStamm(stammName));
+                // Add click handler for card
+                card.addEventListener('click', (e) => {
+                    // Don't trigger if clicking delete button
+                    if (!e.target.classList.contains('stamm-card-delete')) {
+                        selectStamm(stammName);
+                    }
+                });
+
+                // Add click handler for delete button
+                const deleteBtn = card.querySelector('.stamm-card-delete');
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteStamm(stammName);
+                });
+
                 container.appendChild(card);
             });
         }
@@ -757,6 +884,12 @@ marrrrta;1;910;3;1;43,970
                 .split('-')
                 .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function getLatestPlayerCount(data) {
@@ -769,15 +902,20 @@ marrrrta;1;910;3;1;43,970
             currentStamm = stammName;
             document.getElementById('uploadDataBtn').disabled = false;
             
-            await loadStammData(stammName);
+            const loaded = await loadStammData(stammName);
             renderStammList();
-            renderStammView();
+            
+            // Only render if we have data
+            if (loaded && stammData[stammName] && stammData[stammName].length > 0) {
+                renderStammView();
+            } else {
+                document.getElementById('statsSection').classList.add('hidden');
+                showMessage('Keine Daten vorhanden. Bitte lade Daten hoch.', 'error');
+            }
         }
 
         async function deleteStamm(stammName) {
-            event.stopPropagation();
-            
-            if (!confirm(`Stamm "${formatStammName(stammName)}" wirklich löschen?\n\nDies löscht:\n- Den Stamm aus der Liste\n- Die CSV-Datei in GitHub (falls konfiguriert)\n\nDieser Vorgang kann nicht rückgängig gemacht werden!`)) {
+            if (!confirm(`Stamm "${formatStammName(stammName)}" wirklich löschen?\n\nDer Stamm wird lokal entfernt. Klicke "Alle Änderungen pushen" um die Löschung in GitHub zu speichern.`)) {
                 return;
             }
 
@@ -797,30 +935,91 @@ marrrrta;1;910;3;1;43,970
             // Delete from stammData
             delete stammData[stammName];
 
-            // Update GitHub if configured
-            if (hasGitHubAccess()) {
-                const btn = event.target;
-                btn.disabled = true;
-                btn.textContent = '⏳';
+            // Mark as changed
+            markStammListChanged();
+            pendingChanges.stammData.add(stammName + '_DELETE'); // Mark for deletion
 
-                // Update stamm-list.json
-                const listUpdated = await updateStammListInGitHub(stammList);
-                
-                // Delete CSV file
-                const csvDeleted = await deleteFileFromGitHub(`data/${stammName}.csv`);
-
-                if (listUpdated && csvDeleted) {
-                    showMessage(`✅ Stamm "${formatStammName(stammName)}" erfolgreich gelöscht!`, 'success');
-                } else if (listUpdated) {
-                    showMessage(`⚠️ Stamm aus Liste entfernt, aber CSV konnte nicht gelöscht werden.`, 'error');
-                } else {
-                    showMessage(`❌ Fehler beim Löschen. Bitte manuell in GitHub löschen.`, 'error');
-                }
-            } else {
-                showMessage(`⚠️ Stamm lokal entfernt. Bitte stamm-list.json und data/${stammName}.csv manuell in GitHub löschen!`, 'error');
-            }
+            showMessage(`Stamm "${formatStammName(stammName)}" lokal gelöscht. Klicke "Alle Änderungen pushen" um zu speichern.`, 'success');
 
             renderStammList();
+        }
+
+        async function pushAllChanges() {
+            if (!hasGitHubAccess()) {
+                showMessage('GitHub Einstellungen fehlen!', 'error');
+                return;
+            }
+
+            if (!hasPendingChanges()) {
+                showMessage('Keine Änderungen zum Pushen vorhanden.', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('pushAllBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Pushe...';
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // Push stamm-list.json if changed
+            if (pendingChanges.stammList) {
+                const success = await updateStammListInGitHub(stammList);
+                if (success) {
+                    successCount++;
+                    pendingChanges.stammList = false;
+                } else {
+                    failCount++;
+                }
+            }
+
+            // Push all changed stammData
+            const dataChanges = Array.from(pendingChanges.stammData);
+            for (const entry of dataChanges) {
+                // Handle deletions
+                if (entry.endsWith('_DELETE')) {
+                    const stammName = entry.replace('_DELETE', '');
+                    const success = await deleteFileFromGitHub(`data/${stammName}.csv`);
+                    if (success) {
+                        successCount++;
+                        pendingChanges.stammData.delete(entry);
+                    } else {
+                        failCount++;
+                    }
+                } else {
+                    // Handle updates/creations
+                    if (stammData[entry]) {
+                        const csv = generateCSV(stammData[entry]);
+                        const success = await saveToGitHub(entry, csv);
+                        if (success) {
+                            successCount++;
+                            pendingChanges.stammData.delete(entry);
+                        } else {
+                            failCount++;
+                        }
+                    } else {
+                        // Data doesn't exist anymore, remove from pending
+                        pendingChanges.stammData.delete(entry);
+                    }
+                }
+            }
+
+            // Save updated pending changes
+            saveToLocalStorage();
+
+            if (failCount === 0) {
+                showMessage(`✅ Alle ${successCount} Änderungen erfolgreich gepusht!`, 'success');
+                // Don't clear localStorage yet, keep data around
+                pendingChanges = {
+                    stammList: false,
+                    stammData: new Set()
+                };
+                saveToLocalStorage();
+            } else {
+                showMessage(`⚠️ ${successCount} erfolgreich, ${failCount} fehlgeschlagen`, 'error');
+            }
+
+            updatePushButton();
         }
 
         async function deleteFileFromGitHub(path) {
@@ -855,6 +1054,12 @@ marrrrta;1;910;3;1;43,970
         }
 
         async function loadStammData(stammName) {
+            // If data already in localStorage, use that
+            if (stammData[stammName] && stammData[stammName].length > 0) {
+                console.log(`Using ${stammName} from localStorage (${stammData[stammName].length} entries)`);
+                return true;
+            }
+
             // Try loading from GitHub API first (no caching issues)
             if (hasGitHubAccess()) {
                 try {
@@ -867,6 +1072,7 @@ marrrrta;1;910;3;1;43,970
                     if (response.ok) {
                         const csvText = await response.text();
                         stammData[stammName] = parseCSV(csvText);
+                        saveToLocalStorage();
                         console.log(`Loaded ${stammName} from GitHub API (${stammData[stammName].length} entries)`);
                         return true;
                     }
@@ -880,6 +1086,7 @@ marrrrta;1;910;3;1;43,970
                 const response = await fetch(`data/${stammName}.csv`);
                 const csvText = await response.text();
                 stammData[stammName] = parseCSV(csvText);
+                saveToLocalStorage();
                 console.log(`Loaded ${stammName} from GitHub Pages (${stammData[stammName].length} entries)`);
                 return true;
             } catch (error) {
@@ -1066,7 +1273,7 @@ marrrrta;1;910;3;1;43,970
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${index + 1}</td>
-                    <td>${player.name}</td>
+                    <td>${escapeHtml(player.name)}</td>
                     <td>${formatNumber(player.punkte)}</td>
                     <td>${formatNumber(player.geplündert)}</td>
                     <td class="${getDeltaClass(pointsDelta)}">${formatDelta(pointsDelta)}</td>
@@ -1272,49 +1479,21 @@ marrrrta;1;910;3;1;43,970
                     return;
                 }
 
-                // Check if GitHub is configured
-                if (!hasGitHubAccess()) {
-                    showMessage('⚠️ GitHub nicht konfiguriert. Stamm wird nur lokal hinzugefügt. Bitte stamm-list.json manuell updaten!', 'error');
-                    // Add locally anyway
-                    stammList.push(filename);
-                    stammData[filename] = [];
-                    renderStammList();
-                    currentStamm = filename;
-                    document.getElementById('uploadDataBtn').disabled = false;
-                    document.getElementById('addStammModal').classList.remove('active');
-                    document.getElementById('newStammName').value = '';
-                    renderStammView();
-                    return;
-                }
-
-                // Disable button during operation
-                const btn = document.getElementById('confirmAddStammBtn');
-                btn.disabled = true;
-                btn.textContent = '⏳ Wird hinzugefügt...';
-
-                // Add to list and update GitHub
+                // Add locally
                 stammList.push(filename);
-                const success = await updateStammListInGitHub(stammList);
-
-                if (success) {
-                    stammData[filename] = [];
-                    renderStammList();
-                    currentStamm = filename;
-                    document.getElementById('uploadDataBtn').disabled = false;
-                    
-                    showMessage(`✅ Stamm "${name}" hinzugefügt und in GitHub gespeichert!`, 'success');
-                    document.getElementById('addStammModal').classList.remove('active');
-                    document.getElementById('newStammName').value = '';
-                    renderStammView();
-                } else {
-                    // Remove from local list if GitHub failed
-                    stammList.pop();
-                    showMessage('❌ Fehler beim Speichern in GitHub. Stamm wurde NICHT hinzugefügt.', 'error');
-                }
-
-                // Re-enable button
-                btn.disabled = false;
-                btn.textContent = '✅ Hinzufügen';
+                stammData[filename] = [];
+                markStammListChanged();
+                
+                renderStammList();
+                currentStamm = filename;
+                document.getElementById('uploadDataBtn').disabled = false;
+                
+                showMessage(`✅ Stamm "${name}" lokal hinzugefügt. Klicke "Alle Änderungen pushen" um zu speichern.`, 'success');
+                document.getElementById('addStammModal').classList.remove('active');
+                document.getElementById('newStammName').value = '';
+                
+                // Render empty view
+                document.getElementById('statsSection').classList.add('hidden');
             });
 
             // Upload data button
@@ -1338,46 +1517,17 @@ marrrrta;1;910;3;1;43,970
                     }
                     
                     stammData[currentStamm] = mergeData(stammData[currentStamm], newData);
+                    markStammDataChanged(currentStamm);
                     
-                    showMessage(`${newData.length} Spieler erfolgreich verarbeitet!`, 'success');
+                    showMessage(`${newData.length} Spieler erfolgreich verarbeitet! Klicke "Alle Änderungen pushen" um zu speichern.`, 'success');
                     
-                    // Show save/download buttons
-                    document.getElementById('processDataBtn').classList.add('hidden');
-                    document.getElementById('csvInput').disabled = true;
-                    
-                    if (hasGitHubAccess()) {
-                        document.getElementById('saveToGitHubBtn').classList.remove('hidden');
-                        document.getElementById('saveToGitHubBtn').disabled = false;
-                    }
-                    document.getElementById('downloadCSVAltBtn').classList.remove('hidden');
+                    // Hide upload section
+                    document.getElementById('uploadSection').classList.add('hidden');
+                    document.getElementById('csvInput').value = '';
                     
                     renderStammView();
                 } catch (error) {
                     showMessage('Fehler beim Verarbeiten: ' + error.message, 'error');
-                }
-            });
-
-            // Save to GitHub button
-            document.getElementById('saveToGitHubBtn').addEventListener('click', async () => {
-                if (!currentStamm || !stammData[currentStamm]) return;
-                
-                document.getElementById('saveToGitHubBtn').disabled = true;
-                document.getElementById('saveToGitHubBtn').textContent = '⏳ Speichere...';
-                
-                const csv = generateCSV(stammData[currentStamm]);
-                const success = await saveToGitHub(currentStamm, csv);
-                
-                if (success) {
-                    // Reset upload section
-                    document.getElementById('uploadSection').classList.add('hidden');
-                    document.getElementById('csvInput').value = '';
-                    document.getElementById('csvInput').disabled = false;
-                    document.getElementById('processDataBtn').classList.remove('hidden');
-                    document.getElementById('saveToGitHubBtn').classList.add('hidden');
-                    document.getElementById('downloadCSVAltBtn').classList.add('hidden');
-                } else {
-                    document.getElementById('saveToGitHubBtn').disabled = false;
-                    document.getElementById('saveToGitHubBtn').textContent = '💾 In GitHub speichern';
                 }
             });
 
@@ -1392,15 +1542,12 @@ marrrrta;1;910;3;1;43,970
                 link.download = `${currentStamm}.csv`;
                 link.click();
                 
-                showMessage('CSV heruntergeladen. Bitte manuell committen.', 'success');
-                
-                // Reset upload section
-                document.getElementById('uploadSection').classList.add('hidden');
-                document.getElementById('csvInput').value = '';
-                document.getElementById('csvInput').disabled = false;
-                document.getElementById('processDataBtn').classList.remove('hidden');
-                document.getElementById('saveToGitHubBtn').classList.add('hidden');
-                document.getElementById('downloadCSVAltBtn').classList.add('hidden');
+                showMessage('CSV heruntergeladen für manuelles Committen.', 'success');
+            });
+
+            // Push all changes button
+            document.getElementById('pushAllBtn').addEventListener('click', async () => {
+                await pushAllChanges();
             });
 
             // Download CSV
