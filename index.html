@@ -647,12 +647,35 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
         }
 
         async function loadStammData(stammName) {
+            // Try loading from GitHub API first (no caching issues)
+            if (hasGitHubAccess()) {
+                try {
+                    const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}/contents/data/${stammName}.csv`, {
+                        headers: {
+                            'Accept': 'application/vnd.github.v3.raw'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const csvText = await response.text();
+                        stammData[stammName] = parseCSV(csvText);
+                        console.log(`Loaded ${stammName} from GitHub API (${stammData[stammName].length} entries)`);
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn('GitHub API load failed, falling back to GitHub Pages:', error);
+                }
+            }
+            
+            // Fallback to GitHub Pages (for users without GitHub settings or if API fails)
             try {
                 const response = await fetch(`data/${stammName}.csv`);
                 const csvText = await response.text();
                 stammData[stammName] = parseCSV(csvText);
+                console.log(`Loaded ${stammName} from GitHub Pages (${stammData[stammName].length} entries)`);
                 return true;
             } catch (error) {
+                console.warn('Failed to load from GitHub Pages:', error);
                 stammData[stammName] = [];
                 return false;
             }
