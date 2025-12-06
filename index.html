@@ -415,25 +415,6 @@
         <div class="stamm-list-container">
             <h2>🏆 Globale Statistik</h2>
 
-            <div class="stats-grid" style="margin-bottom: 30px;">
-                <div class="stat-card">
-                    <h3>Gesamte Stämme</h3>
-                    <div class="value" id="globalTotalStamms">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Gesamte Spieler</h3>
-                    <div class="value" id="globalTotalPlayers">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Gesamt Geplündert</h3>
-                    <div class="value" id="globalTotalPlundered">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Durchschn. pro Spieler</h3>
-                    <div class="value" id="globalAvgPlundered">0</div>
-                </div>
-            </div>
-
             <div class="chart-container" style="margin-bottom: 30px;">
                 <h2>Top 10 Spieler - Geplündert</h2>
                 <table id="globalTop10Table">
@@ -1365,10 +1346,6 @@
             if (allPlayers.length === 0) {
                 document.getElementById('globalTop10Body').innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
                 document.getElementById('stammStatsBody').innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
-                document.getElementById('globalTotalStamms').textContent = '0';
-                document.getElementById('globalTotalPlayers').textContent = '0';
-                document.getElementById('globalTotalPlundered').textContent = '0';
-                document.getElementById('globalAvgPlundered').textContent = '0';
                 return;
             }
 
@@ -1412,17 +1389,6 @@
                 `;
                 stammStatsBody.appendChild(tr);
             });
-
-            // Global stats
-            const totalStamms = stammList.filter(s => stammData[s] && stammData[s].length > 0).length;
-            const totalPlayers = allPlayers.length;
-            const totalPlundered = allPlayers.reduce((sum, p) => sum + p.geplündert, 0);
-            const avgPlundered = totalPlayers > 0 ? Math.round(totalPlundered / totalPlayers) : 0;
-
-            document.getElementById('globalTotalStamms').textContent = totalStamms;
-            document.getElementById('globalTotalPlayers').textContent = totalPlayers;
-            document.getElementById('globalTotalPlundered').textContent = formatNumber(totalPlundered);
-            document.getElementById('globalAvgPlundered').textContent = formatNumber(avgPlundered);
         }
 
         function renderStammView() {
