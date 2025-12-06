@@ -548,23 +548,32 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             document.getElementById('statsSection').classList.remove('hidden');
             
             const data = stammData[currentStamm];
-            const today = new Date().toISOString().split('T')[0];
-            const todayData = data.filter(d => d.datum === today);
-            const yesterday = getYesterdayDate();
-            const yesterdayData = data.filter(d => d.datum === yesterday);
+            
+            if (data.length === 0) {
+                showMessage('Keine Daten für diesen Stamm vorhanden', 'error');
+                document.getElementById('statsSection').classList.add('hidden');
+                return;
+            }
+
+            // Get latest available date instead of hardcoded "today"
+            const latestDate = getLatestDate(data);
+            const previousDate = getPreviousDate(data, latestDate);
+            
+            const latestData = data.filter(d => d.datum === latestDate);
+            const previousData = data.filter(d => d.datum === previousDate);
 
             // Update stats
-            document.getElementById('totalPlayers').textContent = todayData.length;
+            document.getElementById('totalPlayers').textContent = latestData.length;
             document.getElementById('totalPlundered').textContent = formatNumber(
-                todayData.reduce((sum, d) => sum + d.geplündert, 0)
+                latestData.reduce((sum, d) => sum + d.geplündert, 0)
             );
-            document.getElementById('avgPoints').textContent = todayData.length > 0 
-                ? formatNumber(Math.round(todayData.reduce((sum, d) => sum + d.punkte, 0) / todayData.length))
+            document.getElementById('avgPoints').textContent = latestData.length > 0 
+                ? formatNumber(Math.round(latestData.reduce((sum, d) => sum + d.punkte, 0) / latestData.length))
                 : '0';
-            document.getElementById('lastUpdate').textContent = today;
+            document.getElementById('lastUpdate').textContent = latestDate;
 
             // Render table
-            renderPlayerTable(todayData, yesterdayData);
+            renderPlayerTable(latestData, previousData);
 
             // Render charts
             renderCharts(data);
@@ -574,6 +583,20 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             const date = new Date();
             date.setDate(date.getDate() - 1);
             return date.toISOString().split('T')[0];
+        }
+
+        function getLatestDate(data) {
+            if (data.length === 0) return null;
+            const dates = [...new Set(data.map(d => d.datum))].sort();
+            return dates[dates.length - 1];
+        }
+
+        function getPreviousDate(data, currentDate) {
+            if (data.length === 0 || !currentDate) return null;
+            const dates = [...new Set(data.map(d => d.datum))].sort();
+            const currentIndex = dates.indexOf(currentDate);
+            if (currentIndex <= 0) return null;
+            return dates[currentIndex - 1];
         }
 
         function renderPlayerTable(todayData, yesterdayData) {
@@ -605,12 +628,14 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             Object.values(charts).forEach(chart => chart.destroy());
             charts = {};
 
+            if (data.length === 0) return;
+
             const dates = [...new Set(data.map(d => d.datum))].sort();
-            const today = new Date().toISOString().split('T')[0];
-            const todayData = data.filter(d => d.datum === today);
+            const latestDate = getLatestDate(data);
+            const latestData = data.filter(d => d.datum === latestDate);
 
             // Top 10 by plundered
-            const top10 = [...todayData]
+            const top10 = [...latestData]
                 .sort((a, b) => b.geplündert - a.geplündert)
                 .slice(0, 10)
                 .map(p => p.name);
@@ -632,7 +657,7 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             );
 
             // Bottom 10
-            const bottom10 = [...todayData]
+            const bottom10 = [...latestData]
                 .sort((a, b) => a.geplündert - b.geplündert)
                 .slice(0, 10)
                 .map(p => p.name);
@@ -752,9 +777,11 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
                 // Search across all stamm data
                 const results = [];
                 Object.keys(stammData).forEach(stammName => {
-                    const today = new Date().toISOString().split('T')[0];
-                    const todayData = stammData[stammName].filter(d => d.datum === today);
-                    todayData.forEach(player => {
+                    const latestDate = getLatestDate(stammData[stammName]);
+                    if (!latestDate) return;
+                    
+                    const latestData = stammData[stammName].filter(d => d.datum === latestDate);
+                    latestData.forEach(player => {
                         if (player.name.toLowerCase().includes(searchTerm)) {
                             results.push({ ...player, stamm: stammName });
                         }
