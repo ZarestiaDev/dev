@@ -443,12 +443,28 @@
                             <th>Name</th>
                             <th>Stamm</th>
                             <th>Geplündert</th>
-                            <th>Ø Stamm</th>
                             <th>Punkte</th>
                             <th>Δ Geplündert</th>
                         </tr>
                     </thead>
                     <tbody id="globalTop10Body"></tbody>
+                </table>
+            </div>
+
+            <div class="chart-container" style="margin-bottom: 30px;">
+                <h2>Stamm-Statistiken</h2>
+                <table id="stammStatsTable">
+                    <thead>
+                        <tr>
+                            <th>Stamm</th>
+                            <th>Spieler</th>
+                            <th>Gesamt Geplündert</th>
+                            <th>Ø Geplündert</th>
+                            <th>Ø Punkte</th>
+                            <th>Δ Geplündert</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stammStatsBody"></tbody>
                 </table>
             </div>
 
@@ -1308,11 +1324,47 @@
             return allPlayers;
         }
 
+        function calculateStammStats() {
+            const stammStats = [];
+
+            stammList.forEach(stammName => {
+                const data = stammData[stammName];
+                if (!data || data.length === 0) return;
+
+                const latestDate = getLatestDate(data);
+                const previousDate = getPreviousDate(data, latestDate);
+
+                const latestData = data.filter(d => d.datum === latestDate);
+                const previousData = previousDate ? data.filter(d => d.datum === previousDate) : [];
+
+                // Calculate totals for current data
+                const totalPlundered = latestData.reduce((sum, p) => sum + p.geplündert, 0);
+                const avgPlundered = latestData.length > 0 ? Math.round(totalPlundered / latestData.length) : 0;
+                const avgPoints = latestData.length > 0 ? Math.round(latestData.reduce((sum, p) => sum + p.punkte, 0) / latestData.length) : 0;
+
+                // Calculate delta for total plundered
+                const previousTotalPlundered = previousData.reduce((sum, p) => sum + p.geplündert, 0);
+                const plunderedDelta = totalPlundered - previousTotalPlundered;
+
+                stammStats.push({
+                    stammName: stammName,
+                    playerCount: latestData.length,
+                    totalPlundered: totalPlundered,
+                    avgPlundered: avgPlundered,
+                    avgPoints: avgPoints,
+                    plunderedDelta: plunderedDelta
+                });
+            });
+
+            return stammStats;
+        }
+
         function renderGlobalStats() {
             const allPlayers = aggregateAllStammData();
 
             if (allPlayers.length === 0) {
-                document.getElementById('globalTop10Body').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
+                document.getElementById('globalTop10Body').innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
+                document.getElementById('stammStatsBody').innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
                 document.getElementById('globalTotalStamms').textContent = '0';
                 document.getElementById('globalTotalPlayers').textContent = '0';
                 document.getElementById('globalTotalPlundered').textContent = '0';
@@ -1334,11 +1386,31 @@
                     <td>${escapeHtml(player.name)}</td>
                     <td>${escapeHtml(formatStammName(player.stammName))}</td>
                     <td>${formatNumber(player.geplündert)}</td>
-                    <td>${formatNumber(player.stammAvg)}</td>
                     <td>${formatNumber(player.punkte)}</td>
                     <td class="${getDeltaClass(player.plunderedDelta)}">${formatDelta(player.plunderedDelta)}</td>
                 `;
                 top10Body.appendChild(tr);
+            });
+
+            // Stamm statistics
+            const stammStats = calculateStammStats();
+            const stammStatsBody = document.getElementById('stammStatsBody');
+            stammStatsBody.innerHTML = '';
+
+            // Sort by total plundered (descending)
+            stammStats.sort((a, b) => b.totalPlundered - a.totalPlundered);
+
+            stammStats.forEach(stamm => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${escapeHtml(formatStammName(stamm.stammName))}</td>
+                    <td>${stamm.playerCount}</td>
+                    <td>${formatNumber(stamm.totalPlundered)}</td>
+                    <td>${formatNumber(stamm.avgPlundered)}</td>
+                    <td>${formatNumber(stamm.avgPoints)}</td>
+                    <td class="${getDeltaClass(stamm.plunderedDelta)}">${formatDelta(stamm.plunderedDelta)}</td>
+                `;
+                stammStatsBody.appendChild(tr);
             });
 
             // Global stats
