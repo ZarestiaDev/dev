@@ -413,6 +413,45 @@
         </div>
 
         <div class="stamm-list-container">
+            <h2>🏆 Globale Statistik</h2>
+
+            <div class="stats-grid" style="margin-bottom: 30px;">
+                <div class="stat-card">
+                    <h3>Gesamte Stämme</h3>
+                    <div class="value" id="globalTotalStamms">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Gesamte Spieler</h3>
+                    <div class="value" id="globalTotalPlayers">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Gesamt Geplündert</h3>
+                    <div class="value" id="globalTotalPlundered">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Durchschn. pro Spieler</h3>
+                    <div class="value" id="globalAvgPlundered">0</div>
+                </div>
+            </div>
+
+            <div class="chart-container" style="margin-bottom: 30px;">
+                <h2>Top 10 Spieler - Geplündert</h2>
+                <table id="globalTop10Table">
+                    <thead>
+                        <tr>
+                            <th>Rang</th>
+                            <th>Name</th>
+                            <th>Stamm</th>
+                            <th>Geplündert</th>
+                            <th>Ø Stamm</th>
+                            <th>Punkte</th>
+                            <th>Δ Geplündert</th>
+                        </tr>
+                    </thead>
+                    <tbody id="globalTop10Body"></tbody>
+                </table>
+            </div>
+
             <h2>Deine Stämme</h2>
             <div id="stammList" class="stamm-grid">
                 <!-- Stamm cards will be inserted here -->
@@ -437,7 +476,7 @@
                     <div class="value" id="totalPlayers">0</div>
                 </div>
                 <div class="stat-card">
-                    <h3>Gesamt Geplündert (heute)</h3>
+                    <h3>Gesamt Geplündert</h3>
                     <div class="value" id="totalPlundered">0</div>
                 </div>
                 <div class="stat-card">
@@ -452,7 +491,6 @@
 
             <div class="tabs">
                 <button class="tab active" data-tab="overview">📊 Übersicht</button>
-                <button class="tab" data-tab="global">🏆 Globale Statistik</button>
                 <button class="tab" data-tab="history">📈 Verlauf (alle Spieler)</button>
             </div>
 
@@ -472,61 +510,6 @@
                         </thead>
                         <tbody id="playerTableBody"></tbody>
                     </table>
-                </div>
-            </div>
-
-            <div id="globalTab" class="tab-content hidden">
-                <div class="chart-container">
-                    <h2>🏆 Top 10 Spieler (Geplündert heute)</h2>
-                    <table id="globalTop10Table">
-                        <thead>
-                            <tr>
-                                <th>Rang</th>
-                                <th>Name</th>
-                                <th>Stamm</th>
-                                <th>Geplündert</th>
-                                <th>Punkte</th>
-                                <th>Δ Geplündert</th>
-                            </tr>
-                        </thead>
-                        <tbody id="globalTop10Body"></tbody>
-                    </table>
-                </div>
-
-                <div class="chart-container">
-                    <h2>📉 Bottom 10 Spieler (Geplündert heute)</h2>
-                    <table id="globalBottom10Table">
-                        <thead>
-                            <tr>
-                                <th>Rang</th>
-                                <th>Name</th>
-                                <th>Stamm</th>
-                                <th>Geplündert</th>
-                                <th>Punkte</th>
-                                <th>Δ Geplündert</th>
-                            </tr>
-                        </thead>
-                        <tbody id="globalBottom10Body"></tbody>
-                    </table>
-                </div>
-
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3>Gesamte Stämme</h3>
-                        <div class="value" id="globalTotalStamms">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Gesamte Spieler</h3>
-                        <div class="value" id="globalTotalPlayers">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Gesamt Geplündert</h3>
-                        <div class="value" id="globalTotalPlundered">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Durchschn. pro Spieler</h3>
-                        <div class="value" id="globalAvgPlundered">0</div>
-                    </div>
                 </div>
             </div>
 
@@ -857,6 +840,7 @@
             loadFromLocalStorage();
             await loadStammList();
             renderStammList();
+            renderGlobalStats(); // Initial render of global stats
             setupEventListeners();
             updateGitHubButtons();
             updatePushButton();
@@ -960,6 +944,7 @@
 
             const loaded = await loadStammData(stammName);
             renderStammList();
+            renderGlobalStats(); // Update global stats
 
             // Only render if we have data
             if (loaded && stammData[stammName] && stammData[stammName].length > 0) {
@@ -1001,6 +986,7 @@
             showMessage(`Stamm "${formatStammName(stammName)}" lokal gelöscht. Klicke "Alle Änderungen pushen" um zu speichern.`, 'success');
 
             renderStammList();
+            renderGlobalStats(); // Update global stats after deletion
         }
 
         async function pushAllChanges() {
@@ -1285,8 +1271,9 @@
 
         function aggregateAllStammData() {
             const allPlayers = [];
+            const stammAverages = {};
 
-            // Collect all players from all stamms
+            // Collect all players from all stamms and calculate averages
             stammList.forEach(stammName => {
                 const data = stammData[stammName];
                 if (!data || data.length === 0) return;
@@ -1297,6 +1284,11 @@
                 const latestData = data.filter(d => d.datum === latestDate);
                 const previousData = previousDate ? data.filter(d => d.datum === previousDate) : [];
 
+                // Calculate average plundered for this stamm
+                const stammTotal = latestData.reduce((sum, p) => sum + p.geplündert, 0);
+                const stammAvg = latestData.length > 0 ? Math.round(stammTotal / latestData.length) : 0;
+                stammAverages[stammName] = stammAvg;
+
                 latestData.forEach(player => {
                     const yesterday = previousData.find(p => p.name === player.name);
                     const plunderedDelta = yesterday ? player.geplündert - yesterday.geplündert : 0;
@@ -1304,6 +1296,7 @@
                     allPlayers.push({
                         name: player.name,
                         stammName: stammName,
+                        stammAvg: stammAvg,
                         punkte: player.punkte,
                         geplündert: player.geplündert,
                         plunderedDelta: plunderedDelta,
@@ -1319,8 +1312,11 @@
             const allPlayers = aggregateAllStammData();
 
             if (allPlayers.length === 0) {
-                document.getElementById('globalTop10Body').innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
-                document.getElementById('globalBottom10Body').innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
+                document.getElementById('globalTop10Body').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">Keine Daten vorhanden</td></tr>';
+                document.getElementById('globalTotalStamms').textContent = '0';
+                document.getElementById('globalTotalPlayers').textContent = '0';
+                document.getElementById('globalTotalPlundered').textContent = '0';
+                document.getElementById('globalAvgPlundered').textContent = '0';
                 return;
             }
 
@@ -1338,27 +1334,11 @@
                     <td>${escapeHtml(player.name)}</td>
                     <td>${escapeHtml(formatStammName(player.stammName))}</td>
                     <td>${formatNumber(player.geplündert)}</td>
+                    <td>${formatNumber(player.stammAvg)}</td>
                     <td>${formatNumber(player.punkte)}</td>
                     <td class="${getDeltaClass(player.plunderedDelta)}">${formatDelta(player.plunderedDelta)}</td>
                 `;
                 top10Body.appendChild(tr);
-            });
-
-            // Bottom 10
-            const bottom10 = sorted.slice(-10).reverse();
-            const bottom10Body = document.getElementById('globalBottom10Body');
-            bottom10Body.innerHTML = '';
-            bottom10.forEach((player, index) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${sorted.length - 9 + index}</td>
-                    <td>${escapeHtml(player.name)}</td>
-                    <td>${escapeHtml(formatStammName(player.stammName))}</td>
-                    <td>${formatNumber(player.geplündert)}</td>
-                    <td>${formatNumber(player.punkte)}</td>
-                    <td class="${getDeltaClass(player.plunderedDelta)}">${formatDelta(player.plunderedDelta)}</td>
-                `;
-                bottom10Body.appendChild(tr);
             });
 
             // Global stats
@@ -1701,12 +1681,13 @@
                     markStammDataChanged(currentStamm);
                     
                     showMessage(`${newData.length} Spieler erfolgreich verarbeitet! Klicke "Alle Änderungen pushen" um zu speichern.`, 'success');
-                    
+
                     // Hide upload section
                     document.getElementById('uploadSection').classList.add('hidden');
                     document.getElementById('csvInput').value = '';
-                    
+
                     renderStammView();
+                    renderGlobalStats(); // Update global stats after data upload
                 } catch (error) {
                     showMessage('Fehler beim Verarbeiten: ' + error.message, 'error');
                 }
@@ -1752,11 +1733,6 @@
                     tab.classList.add('active');
                     const tabName = tab.dataset.tab;
                     document.getElementById(tabName + 'Tab').classList.remove('hidden');
-
-                    // Render global stats when switching to global tab
-                    if (tabName === 'global') {
-                        renderGlobalStats();
-                    }
                 });
             });
 
