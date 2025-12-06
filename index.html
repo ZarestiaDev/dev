@@ -294,6 +294,91 @@
         .modal-content small a:hover {
             text-decoration: underline;
         }
+
+        .stamm-list-container {
+            margin: 30px 0;
+        }
+
+        .stamm-list-container h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .stamm-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .stamm-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stamm-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .stamm-card.active {
+            box-shadow: 0 0 0 3px #fff, 0 0 0 6px #667eea;
+            transform: scale(1.05);
+        }
+
+        .stamm-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .stamm-card h3 {
+            font-size: 1.3em;
+            margin: 0;
+            word-break: break-word;
+        }
+
+        .stamm-card-delete {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .stamm-card-delete:hover {
+            background: #dc3545;
+            transform: scale(1.1);
+        }
+
+        .stamm-card-info {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .stamm-card-empty {
+            background: #f8f9fa;
+            color: #666;
+            border: 2px dashed #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-style: italic;
+        }
+
     </style>
 </head>
 <body>
@@ -304,16 +389,6 @@
 
         <div class="controls">
             <div class="control-group">
-                <label for="stammSelect">Stamm auswählen:</label>
-                <select id="stammSelect">
-                    <option value="">-- Stamm wählen --</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label for="searchPlayer">Spieler suchen:</label>
-                <input type="text" id="searchPlayer" placeholder="Spielername eingeben...">
-            </div>
-            <div class="control-group">
                 <button id="addStammBtn">➕ Neuen Stamm hinzufügen</button>
             </div>
             <div class="control-group">
@@ -321,6 +396,13 @@
             </div>
             <div class="control-group">
                 <button id="settingsBtn">⚙️ GitHub Einstellungen</button>
+            </div>
+        </div>
+
+        <div class="stamm-list-container">
+            <h2>Deine Stämme</h2>
+            <div id="stammList" class="stamm-grid">
+                <!-- Stamm cards will be inserted here -->
             </div>
         </div>
 
@@ -620,6 +702,7 @@ marrrrta;1;910;3;1;43,970
         async function init() {
             loadGitHubSettings();
             await loadStammList();
+            renderStammList();
             setupEventListeners();
             updateGitHubButtons();
         }
@@ -628,22 +711,147 @@ marrrrta;1;910;3;1;43,970
             try {
                 const response = await fetch('stamm-list.json');
                 stammList = await response.json();
-                updateStammSelect();
             } catch (error) {
                 showMessage('Keine stamm-list.json gefunden. Erstelle eine neue Liste.', 'error');
                 stammList = [];
             }
         }
 
-        function updateStammSelect() {
-            const select = document.getElementById('stammSelect');
-            select.innerHTML = '<option value="">-- Stamm wählen --</option>';
-            stammList.forEach(stamm => {
-                const option = document.createElement('option');
-                option.value = stamm;
-                option.textContent = stamm;
-                select.appendChild(option);
+        function renderStammList() {
+            const container = document.getElementById('stammList');
+            container.innerHTML = '';
+
+            if (stammList.length === 0) {
+                container.innerHTML = '<div class="stamm-card stamm-card-empty">Noch keine Stämme vorhanden. Klicke auf "Neuen Stamm hinzufügen".</div>';
+                return;
+            }
+
+            stammList.forEach(stammName => {
+                const card = document.createElement('div');
+                card.className = 'stamm-card';
+                if (currentStamm === stammName) {
+                    card.classList.add('active');
+                }
+
+                const playerCount = stammData[stammName] ? getLatestPlayerCount(stammData[stammName]) : 0;
+                const lastUpdate = stammData[stammName] && stammData[stammName].length > 0 ? getLatestDate(stammData[stammName]) : 'Keine Daten';
+
+                card.innerHTML = `
+                    <div class="stamm-card-header">
+                        <h3>${formatStammName(stammName)}</h3>
+                        <button class="stamm-card-delete" onclick="deleteStamm('${stammName}'); event.stopPropagation();">🗑️</button>
+                    </div>
+                    <div class="stamm-card-info">
+                        👥 ${playerCount} Spieler<br>
+                        📅 ${lastUpdate}
+                    </div>
+                `;
+
+                card.addEventListener('click', () => selectStamm(stammName));
+                container.appendChild(card);
             });
+        }
+
+        function formatStammName(filename) {
+            return filename
+                .split('-')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+
+        function getLatestPlayerCount(data) {
+            if (!data || data.length === 0) return 0;
+            const latestDate = getLatestDate(data);
+            return data.filter(d => d.datum === latestDate).length;
+        }
+
+        async function selectStamm(stammName) {
+            currentStamm = stammName;
+            document.getElementById('uploadDataBtn').disabled = false;
+            
+            await loadStammData(stammName);
+            renderStammList();
+            renderStammView();
+        }
+
+        async function deleteStamm(stammName) {
+            event.stopPropagation();
+            
+            if (!confirm(`Stamm "${formatStammName(stammName)}" wirklich löschen?\n\nDies löscht:\n- Den Stamm aus der Liste\n- Die CSV-Datei in GitHub (falls konfiguriert)\n\nDieser Vorgang kann nicht rückgängig gemacht werden!`)) {
+                return;
+            }
+
+            // Remove from local list
+            const index = stammList.indexOf(stammName);
+            if (index > -1) {
+                stammList.splice(index, 1);
+            }
+
+            // If it was the current stamm, clear selection
+            if (currentStamm === stammName) {
+                currentStamm = null;
+                document.getElementById('uploadDataBtn').disabled = true;
+                document.getElementById('statsSection').classList.add('hidden');
+            }
+
+            // Delete from stammData
+            delete stammData[stammName];
+
+            // Update GitHub if configured
+            if (hasGitHubAccess()) {
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = '⏳';
+
+                // Update stamm-list.json
+                const listUpdated = await updateStammListInGitHub(stammList);
+                
+                // Delete CSV file
+                const csvDeleted = await deleteFileFromGitHub(`data/${stammName}.csv`);
+
+                if (listUpdated && csvDeleted) {
+                    showMessage(`✅ Stamm "${formatStammName(stammName)}" erfolgreich gelöscht!`, 'success');
+                } else if (listUpdated) {
+                    showMessage(`⚠️ Stamm aus Liste entfernt, aber CSV konnte nicht gelöscht werden.`, 'error');
+                } else {
+                    showMessage(`❌ Fehler beim Löschen. Bitte manuell in GitHub löschen.`, 'error');
+                }
+            } else {
+                showMessage(`⚠️ Stamm lokal entfernt. Bitte stamm-list.json und data/${stammName}.csv manuell in GitHub löschen!`, 'error');
+            }
+
+            renderStammList();
+        }
+
+        async function deleteFileFromGitHub(path) {
+            if (!hasGitHubAccess()) return false;
+
+            const sha = await getFileSHA(path);
+            if (!sha) {
+                console.warn(`File ${path} not found, might already be deleted`);
+                return true; // Consider it success if file doesn't exist
+            }
+
+            try {
+                const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}/contents/${path}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `token ${githubSettings.token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: `Delete ${path}`,
+                        sha: sha,
+                        branch: 'main'
+                    })
+                });
+
+                return response.ok;
+            } catch (error) {
+                console.error('Error deleting file:', error);
+                return false;
+            }
         }
 
         async function loadStammData(stammName) {
@@ -1003,43 +1211,6 @@ marrrrta;1;910;3;1;43,970
         }
 
         function setupEventListeners() {
-            // Stamm selection
-            document.getElementById('stammSelect').addEventListener('change', async (e) => {
-                currentStamm = e.target.value;
-                if (currentStamm) {
-                    await loadStammData(currentStamm);
-                    renderStammView();
-                    document.getElementById('uploadDataBtn').disabled = false;
-                } else {
-                    document.getElementById('uploadDataBtn').disabled = true;
-                    document.getElementById('statsSection').classList.add('hidden');
-                }
-            });
-
-            // Player search
-            document.getElementById('searchPlayer').addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
-                if (searchTerm.length < 2) return;
-
-                // Search across all stamm data
-                const results = [];
-                Object.keys(stammData).forEach(stammName => {
-                    const latestDate = getLatestDate(stammData[stammName]);
-                    if (!latestDate) return;
-                    
-                    const latestData = stammData[stammName].filter(d => d.datum === latestDate);
-                    latestData.forEach(player => {
-                        if (player.name.toLowerCase().includes(searchTerm)) {
-                            results.push({ ...player, stamm: stammName });
-                        }
-                    });
-                });
-
-                if (results.length > 0) {
-                    showMessage(`Gefunden: ${results.map(r => `${r.name} (${r.stamm})`).join(', ')}`, 'success');
-                }
-            });
-
             // Add stamm button
             document.getElementById('addStammBtn').addEventListener('click', () => {
                 document.getElementById('addStammModal').classList.add('active');
@@ -1107,12 +1278,12 @@ marrrrta;1;910;3;1;43,970
                     // Add locally anyway
                     stammList.push(filename);
                     stammData[filename] = [];
-                    updateStammSelect();
-                    document.getElementById('stammSelect').value = filename;
+                    renderStammList();
                     currentStamm = filename;
                     document.getElementById('uploadDataBtn').disabled = false;
                     document.getElementById('addStammModal').classList.remove('active');
                     document.getElementById('newStammName').value = '';
+                    renderStammView();
                     return;
                 }
 
@@ -1127,14 +1298,14 @@ marrrrta;1;910;3;1;43,970
 
                 if (success) {
                     stammData[filename] = [];
-                    updateStammSelect();
-                    document.getElementById('stammSelect').value = filename;
+                    renderStammList();
                     currentStamm = filename;
                     document.getElementById('uploadDataBtn').disabled = false;
                     
                     showMessage(`✅ Stamm "${name}" hinzugefügt und in GitHub gespeichert!`, 'success');
                     document.getElementById('addStammModal').classList.remove('active');
                     document.getElementById('newStammName').value = '';
+                    renderStammView();
                 } else {
                     // Remove from local list if GitHub failed
                     stammList.pop();
