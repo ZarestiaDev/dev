@@ -327,9 +327,9 @@
         <div id="uploadSection" class="upload-section hidden">
             <h3>CSV-Daten einfügen</h3>
             <p style="color: #666; margin-bottom: 10px;">Kopiere die Rohdaten aus Die Stämme hier rein (inkl. Header-Zeile):</p>
-            <textarea id="csvInput" placeholder="Name;Rang;Punkte;Globaler Rang;Dörfer;Features;Geplündert
-Herr von Ribbeck;7;501 ;956;1;  ;61,140
-Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
+            <textarea id="csvInput" placeholder="Name;Rang;Punkte;Globaler Rang;Dörfer;Geplündert
+marrrrta;1;910;3;1;43,970
+-KLASSIK-;2;878;7;1;36,880"></textarea>
             <div class="button-group">
                 <button id="processDataBtn">✅ Daten verarbeiten</button>
                 <button id="saveToGitHubBtn" class="hidden" disabled>💾 In GitHub speichern</button>
@@ -709,16 +709,26 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             const today = new Date().toISOString().split('T')[0];
             const parsed = [];
 
+            // Check header to determine format
+            const header = lines[0].toLowerCase();
+            const hasFeatures = header.includes('features');
+
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
 
                 const parts = line.split(';');
-                if (parts.length < 7) continue;
+                
+                // Flexible parsing based on column count
+                const minColumns = hasFeatures ? 7 : 6;
+                if (parts.length < minColumns) continue;
 
                 const name = parts[0].trim();
                 const punkteStr = parts[2].trim().replace(/\s/g, '');
-                const geplündertStr = parts[6].trim().replace(/\s/g, '').replace(/,/g, '');
+                
+                // Geplündert is either column 6 (with Features) or column 5 (without Features)
+                const geplündertIndex = hasFeatures ? 6 : 5;
+                const geplündertStr = parts[geplündertIndex].trim().replace(/\s/g, '').replace(/,/g, '');
 
                 const punkte = parseInt(punkteStr);
                 const geplündert = parseInt(geplündertStr);
@@ -773,22 +783,22 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
                 return;
             }
 
-            document.getElementById('statsSection').classList.remove('hidden');
-            
             const data = stammData[currentStamm];
             
             if (data.length === 0) {
-                showMessage('Keine Daten für diesen Stamm vorhanden', 'error');
                 document.getElementById('statsSection').classList.add('hidden');
+                showMessage('Keine Daten für diesen Stamm vorhanden. Bitte lade Daten hoch.', 'error');
                 return;
             }
+
+            document.getElementById('statsSection').classList.remove('hidden');
 
             // Get latest available date instead of hardcoded "today"
             const latestDate = getLatestDate(data);
             const previousDate = getPreviousDate(data, latestDate);
             
             const latestData = data.filter(d => d.datum === latestDate);
-            const previousData = data.filter(d => d.datum === previousDate);
+            const previousData = previousDate ? data.filter(d => d.datum === previousDate) : [];
 
             // Update stats
             document.getElementById('totalPlayers').textContent = latestData.length;
@@ -831,10 +841,17 @@ Radio Pyongyang;1;642 ;80;1;  ;54,522"></textarea>
             const tbody = document.getElementById('playerTableBody');
             tbody.innerHTML = '';
 
+            if (!todayData || todayData.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td colspan="6" style="text-align: center; color: #666;">Keine Daten vorhanden</td>';
+                tbody.appendChild(tr);
+                return;
+            }
+
             const sorted = [...todayData].sort((a, b) => b.geplündert - a.geplündert);
 
             sorted.forEach((player, index) => {
-                const yesterday = yesterdayData.find(p => p.name === player.name);
+                const yesterday = yesterdayData ? yesterdayData.find(p => p.name === player.name) : null;
                 const pointsDelta = yesterday ? player.punkte - yesterday.punkte : 0;
                 const plunderedDelta = yesterday ? player.geplündert - yesterday.geplündert : 0;
 
