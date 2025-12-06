@@ -901,16 +901,19 @@
         async function selectStamm(stammName) {
             currentStamm = stammName;
             document.getElementById('uploadDataBtn').disabled = false;
-            
+
             const loaded = await loadStammData(stammName);
             renderStammList();
-            
+
             // Only render if we have data
             if (loaded && stammData[stammName] && stammData[stammName].length > 0) {
                 renderStammView();
             } else {
                 document.getElementById('statsSection').classList.add('hidden');
-                showMessage('Keine Daten vorhanden. Bitte lade Daten hoch.', 'error');
+                // Don't show error for new stamms - they just need data uploaded
+                if (stammData[stammName] && stammData[stammName].length === 0) {
+                    console.log(`Stamm "${stammName}" is new and has no data yet`);
+                }
             }
         }
 
@@ -1084,7 +1087,20 @@
             // Fallback to GitHub Pages (for users without GitHub settings or if API fails)
             try {
                 const response = await fetch(`data/${stammName}.csv`);
+                if (!response.ok) {
+                    console.warn(`File not found: data/${stammName}.csv`);
+                    stammData[stammName] = [];
+                    return false;
+                }
                 const csvText = await response.text();
+
+                // Check if response is HTML (404 page) instead of CSV
+                if (csvText.trim().startsWith('<') || csvText.includes('<!DOCTYPE') || csvText.includes('<html')) {
+                    console.warn(`Received HTML instead of CSV for ${stammName}, file probably doesn't exist`);
+                    stammData[stammName] = [];
+                    return false;
+                }
+
                 stammData[stammName] = parseCSV(csvText);
                 saveToLocalStorage();
                 console.log(`Loaded ${stammName} from GitHub Pages (${stammData[stammName].length} entries)`);
@@ -1099,16 +1115,35 @@
         function parseCSV(csvText) {
             const lines = csvText.trim().split('\n');
             if (lines.length <= 1) return [];
-            
+
+            // Validate header
+            const header = lines[0].toLowerCase();
+            if (!header.includes('datum') || !header.includes('punkte') || !header.includes('geplündert')) {
+                console.warn('CSV header validation failed - not a valid stamm CSV file');
+                return [];
+            }
+
             const data = [];
             for (let i = 1; i < lines.length; i++) {
-                const parts = lines[i].split(';');
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                const parts = line.split(';');
                 if (parts.length >= 4) {
+                    const punkte = parseInt(parts[2].trim());
+                    const geplündert = parseInt(parts[3].trim());
+
+                    // Skip invalid data (like HTML tags)
+                    if (isNaN(punkte) || isNaN(geplündert)) {
+                        console.warn(`Skipping invalid line: ${line}`);
+                        continue;
+                    }
+
                     data.push({
                         datum: parts[0].trim(),
                         name: parts[1].trim(),
-                        punkte: parseInt(parts[2].trim()),
-                        geplündert: parseInt(parts[3].trim())
+                        punkte: punkte,
+                        geplündert: geplündert
                     });
                 }
             }
