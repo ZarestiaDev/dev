@@ -1215,8 +1215,9 @@
                 if (parts.length < minColumns) continue;
 
                 const name = parts[0].trim();
-                const punkteStr = parts[2].trim().replace(/\s/g, '');
-                
+                // Remove thousand separators (commas) and spaces from numbers
+                const punkteStr = parts[2].trim().replace(/\s/g, '').replace(/,/g, '');
+
                 // Geplündert is either column 6 (with Features) or column 5 (without Features)
                 const geplündertIndex = hasFeatures ? 6 : 5;
                 const geplündertStr = parts[geplündertIndex].trim().replace(/\s/g, '').replace(/,/g, '');
