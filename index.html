@@ -419,44 +419,6 @@
             </div>
         </div>
 
-        <div class="stamm-list-container">
-            <h2>🏆 Globale Statistik</h2>
-
-            <div class="chart-container" style="margin-bottom: 20px;">
-                <h2>Top 10 Spieler - Geplündert</h2>
-                <table id="globalTop10Table">
-                    <thead>
-                        <tr>
-                            <th>Rang</th>
-                            <th>Name</th>
-                            <th>Stamm</th>
-                            <th>Geplündert</th>
-                            <th>Punkte</th>
-                            <th>Δ Geplündert</th>
-                        </tr>
-                    </thead>
-                    <tbody id="globalTop10Body"></tbody>
-                </table>
-            </div>
-
-            <div class="chart-container" style="margin-bottom: 20px;">
-                <h2>Stamm-Statistiken</h2>
-                <table id="stammStatsTable">
-                    <thead>
-                        <tr>
-                            <th>Stamm</th>
-                            <th>Spieler</th>
-                            <th>Gesamt Geplündert</th>
-                            <th>Ø Geplündert</th>
-                            <th>Ø Punkte</th>
-                            <th>Δ Geplündert</th>
-                        </tr>
-                    </thead>
-                    <tbody id="stammStatsBody"></tbody>
-                </table>
-            </div>
-        </div>
-
         <div id="uploadSection" class="upload-section hidden">
             <h3>CSV-Daten einfügen</h3>
             <p style="color: #666; margin-bottom: 10px;">Kopiere die Rohdaten aus Die Stämme hier rein (inkl. Header-Zeile):</p>
@@ -529,6 +491,44 @@
 
             <div class="button-group">
                 <button id="downloadCSVBtn">💾 CSV herunterladen</button>
+            </div>
+        </div>
+
+        <div class="stamm-list-container">
+            <h2>🏆 Globale Statistik</h2>
+
+            <div class="chart-container" style="margin-bottom: 20px;">
+                <h2>Top 10 Spieler - Geplündert</h2>
+                <table id="globalTop10Table">
+                    <thead>
+                        <tr>
+                            <th>Rang</th>
+                            <th>Name</th>
+                            <th>Stamm</th>
+                            <th>Geplündert</th>
+                            <th>Punkte</th>
+                            <th>Δ Geplündert</th>
+                        </tr>
+                    </thead>
+                    <tbody id="globalTop10Body"></tbody>
+                </table>
+            </div>
+
+            <div class="chart-container" style="margin-bottom: 20px;">
+                <h2>Stamm-Statistiken</h2>
+                <table id="stammStatsTable">
+                    <thead>
+                        <tr>
+                            <th>Stamm</th>
+                            <th>Spieler</th>
+                            <th>Gesamt Geplündert</th>
+                            <th>Ø Geplündert</th>
+                            <th>Ø Punkte</th>
+                            <th>Δ Geplündert</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stammStatsBody"></tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -1165,12 +1165,12 @@
                 if (parts.length < minColumns) continue;
 
                 const name = parts[0].trim();
-                // Remove thousand separators (commas) and spaces from numbers
-                const punkteStr = parts[2].trim().replace(/\s/g, '').replace(/,/g, '');
+                // Remove thousand separators (both dots and commas) and spaces from numbers
+                const punkteStr = parts[2].trim().replace(/\s/g, '').replace(/\./g, '').replace(/,/g, '');
 
                 // Geplündert is either column 6 (with Features) or column 5 (without Features)
                 const geplündertIndex = hasFeatures ? 6 : 5;
-                const geplündertStr = parts[geplündertIndex].trim().replace(/\s/g, '').replace(/,/g, '');
+                const geplündertStr = parts[geplündertIndex].trim().replace(/\s/g, '').replace(/\./g, '').replace(/,/g, '');
 
                 const punkte = parseInt(punkteStr);
                 const geplündert = parseInt(geplündertStr);
