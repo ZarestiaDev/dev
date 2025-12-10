@@ -24,22 +24,22 @@
             margin: 0 auto;
             background: white;
             border-radius: 12px;
-            padding: 30px;
+            padding: 20px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
         }
 
         h1 {
             color: #333;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             text-align: center;
-            font-size: 2.5em;
+            font-size: 2em;
         }
 
         .controls {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
+            gap: 10px;
+            margin-bottom: 20px;
         }
 
         .control-group {
@@ -153,16 +153,16 @@
         }
 
         .chart-container {
-            margin-bottom: 40px;
+            margin-bottom: 20px;
             background: #f8f9fa;
-            padding: 20px;
+            padding: 15px;
             border-radius: 8px;
         }
 
         .chart-container h2 {
             color: #333;
-            margin-bottom: 20px;
-            font-size: 1.5em;
+            margin-bottom: 15px;
+            font-size: 1.2em;
         }
 
         .chart-wrapper {
@@ -306,19 +306,19 @@
         }
 
         .stamm-list-container {
-            margin: 30px 0;
+            margin: 20px 0;
         }
 
         .stamm-list-container h2 {
             color: #333;
-            margin-bottom: 20px;
-            font-size: 1.5em;
+            margin-bottom: 15px;
+            font-size: 1.3em;
         }
 
         .stamm-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 15px;
         }
 
         .stamm-card {
@@ -413,9 +413,16 @@
         </div>
 
         <div class="stamm-list-container">
+            <h2>Deine Stämme</h2>
+            <div id="stammList" class="stamm-grid">
+                <!-- Stamm cards will be inserted here -->
+            </div>
+        </div>
+
+        <div class="stamm-list-container">
             <h2>🏆 Globale Statistik</h2>
 
-            <div class="chart-container" style="margin-bottom: 30px;">
+            <div class="chart-container" style="margin-bottom: 20px;">
                 <h2>Top 10 Spieler - Geplündert</h2>
                 <table id="globalTop10Table">
                     <thead>
@@ -432,7 +439,7 @@
                 </table>
             </div>
 
-            <div class="chart-container" style="margin-bottom: 30px;">
+            <div class="chart-container" style="margin-bottom: 20px;">
                 <h2>Stamm-Statistiken</h2>
                 <table id="stammStatsTable">
                     <thead>
@@ -447,11 +454,6 @@
                     </thead>
                     <tbody id="stammStatsBody"></tbody>
                 </table>
-            </div>
-
-            <h2>Deine Stämme</h2>
-            <div id="stammList" class="stamm-grid">
-                <!-- Stamm cards will be inserted here -->
             </div>
         </div>
 
@@ -596,66 +598,14 @@
             stammData: new Set() // Set of stammNames that have changed
         };
 
-        // LocalStorage Management
-        function saveToLocalStorage() {
-            try {
-                localStorage.setItem('stammData', JSON.stringify(stammData));
-                localStorage.setItem('stammList', JSON.stringify(stammList));
-                localStorage.setItem('pendingChanges', JSON.stringify({
-                    stammList: pendingChanges.stammList,
-                    stammData: Array.from(pendingChanges.stammData)
-                }));
-            } catch (error) {
-                console.error('Failed to save to localStorage:', error);
-                // Warn user if quota exceeded (but only once per session)
-                if (error.name === 'QuotaExceededError' && !window.localStorageWarningShown) {
-                    window.localStorageWarningShown = true;
-                    showMessage('⚠️ Browser-Speicher voll! Änderungen werden nicht gespeichert. Bitte pushe zu GitHub.', 'error');
-                }
-            }
-        }
-
-        function loadFromLocalStorage() {
-            try {
-                const savedData = localStorage.getItem('stammData');
-                const savedList = localStorage.getItem('stammList');
-                const savedChanges = localStorage.getItem('pendingChanges');
-
-                if (savedData) {
-                    stammData = JSON.parse(savedData);
-                }
-                if (savedList) {
-                    stammList = JSON.parse(savedList);
-                }
-                if (savedChanges) {
-                    const changes = JSON.parse(savedChanges);
-                    pendingChanges.stammList = changes.stammList;
-                    pendingChanges.stammData = new Set(changes.stammData);
-                }
-            } catch (error) {
-                console.error('Failed to load from localStorage:', error);
-            }
-        }
-
-        function clearLocalStorage() {
-            localStorage.removeItem('stammData');
-            localStorage.removeItem('stammList');
-            localStorage.removeItem('pendingChanges');
-            pendingChanges = {
-                stammList: false,
-                stammData: new Set()
-            };
-        }
-
+        // Pending changes tracking (no localStorage)
         function markStammDataChanged(stammName) {
             pendingChanges.stammData.add(stammName);
-            saveToLocalStorage();
             updatePushButton();
         }
 
         function markStammListChanged() {
             pendingChanges.stammList = true;
-            saveToLocalStorage();
             updatePushButton();
         }
 
@@ -831,10 +781,23 @@
             }
         }
 
+        // Clean up old localStorage data (migration)
+        function cleanupOldLocalStorage() {
+            try {
+                // Remove old data storage
+                localStorage.removeItem('stammData');
+                localStorage.removeItem('stammList');
+                localStorage.removeItem('pendingChanges');
+                console.log('Cleaned up old localStorage data');
+            } catch (error) {
+                console.warn('Failed to cleanup localStorage:', error);
+            }
+        }
+
         // Initialize
         async function init() {
+            cleanupOldLocalStorage(); // Clean up old data first
             loadGitHubSettings();
-            loadFromLocalStorage();
             await loadStammList();
             renderStammList();
             renderGlobalStats(); // Initial render of global stats
@@ -844,22 +807,17 @@
         }
 
         async function loadStammList() {
-            // If we have local changes, use those
-            if (stammList.length > 0) {
-                console.log('Using stammList from localStorage');
-                return;
-            }
-
-            // Otherwise load from GitHub
+            // Load from GitHub with cache busting
             try {
-                const response = await fetch('stamm-list.json');
+                const cacheBuster = new Date().getTime();
+                const response = await fetch(`stamm-list.json?v=${cacheBuster}`, {
+                    cache: 'no-cache'
+                });
                 stammList = await response.json();
-                
+
                 // Load initial data for all stamms
                 for (const stammName of stammList) {
-                    if (!stammData[stammName]) {
-                        await loadStammData(stammName);
-                    }
+                    await loadStammData(stammName);
                 }
             } catch (error) {
                 showMessage('Keine stamm-list.json gefunden. Erstelle eine neue Liste.', 'error');
@@ -1046,17 +1004,12 @@
                 }
             }
 
-            // Save updated pending changes
-            saveToLocalStorage();
-
             if (failCount === 0) {
                 showMessage(`✅ Alle ${successCount} Änderungen erfolgreich gepusht!`, 'success');
-                // Don't clear localStorage yet, keep data around
                 pendingChanges = {
                     stammList: false,
                     stammData: new Set()
                 };
-                saveToLocalStorage();
             } else {
                 showMessage(`⚠️ ${successCount} erfolgreich, ${failCount} fehlgeschlagen`, 'error');
             }
@@ -1114,7 +1067,6 @@
                         const parsedData = parseCSV(csvText);
                         if (parsedData.length > 0) {
                             stammData[stammName] = parsedData;
-                            saveToLocalStorage();
                             console.log(`Loaded ${stammName} from GitHub Pages (${stammData[stammName].length} entries)`);
                             return true;
                         }
@@ -1124,7 +1076,7 @@
                 console.warn('Failed to load from GitHub Pages:', error);
             }
 
-            // Fallback 1: Try GitHub API if available
+            // Fallback: Try GitHub API if available
             if (hasGitHubAccess()) {
                 try {
                     const response = await fetch(`https://api.github.com/repos/${githubSettings.username}/${githubSettings.repo}/contents/data/${stammName}.csv`, {
@@ -1136,19 +1088,12 @@
                     if (response.ok) {
                         const csvText = await response.text();
                         stammData[stammName] = parseCSV(csvText);
-                        saveToLocalStorage();
                         console.log(`Loaded ${stammName} from GitHub API (${stammData[stammName].length} entries)`);
                         return true;
                     }
                 } catch (error) {
                     console.warn('GitHub API load failed:', error);
                 }
-            }
-
-            // Fallback 2: Use localStorage if available
-            if (stammData[stammName] && stammData[stammName].length > 0) {
-                console.log(`Using ${stammName} from localStorage as fallback (${stammData[stammName].length} entries)`);
-                return true;
             }
 
             // No data available
